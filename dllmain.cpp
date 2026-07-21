@@ -1,9 +1,113 @@
 #include <windows.h>
 #include <iostream>
-#include "Basic.hpp"
-#include "Engine_classes.hpp"
+#include <cmath>
 
-using namespace SDK;
+// --- UNREAL ENGINE YAPI TANIMLAMALARI ---
+
+struct FVector {
+    double X, Y, Z;
+};
+
+struct FRotator {
+    double Pitch, Yaw, Roll;
+};
+
+// Unreal Engine UObject Taban Sınıfı (Bellek boyutu: 0x28)
+class UObject {
+public:
+    void** VTable;             // 0x00
+    char pad_UObject[0x20];    // 0x08 - 0x28
+};
+
+// Karakter Koordinatlarını Tutan Bileşen
+class USceneComponent : public UObject {
+public:
+    char pad_0128[0x100];      // 0x28 - 0x128
+    FVector RelativeLocation;  // 0x0128
+};
+
+// Karakter Hareket Özelliklerini Tutan Bileşen
+class UCharacterMovementComponent : public UObject {
+public:
+    char pad_0170[0x148];      // 0x28 - 0x170
+    float GravityScale;        // 0x0170
+    float MaxStepHeight;       // 0x0174
+    float JumpZVelocity;       // 0x0178
+    
+    char pad_0248[0xCC];       // 0x17C - 0x248
+    float MaxWalkSpeed;        // 0x0248
+    float MaxWalkSpeedCrouched;// 0x024C
+    float MaxSwimSpeed;        // 0x0250
+    float MaxFlySpeed;         // 0x0254
+    float MaxCustomMovementSpeed; // 0x0258
+    float MaxAcceleration;     // 0x025C
+};
+
+// Aktif Oyuncu Karakter Sınıfı (Flat Class Yapısı)
+class ACharacter : public UObject {
+public:
+    char pad_01A0[0x178];      // 0x28 - 0x1A0
+    USceneComponent* RootComponent; // 0x01A0
+    
+    char pad_0320[0x178];      // 0x1A8 - 0x320
+    UCharacterMovementComponent* CharacterMovement; // 0x0320
+    
+    char pad_0470[0x148];      // 0x328 - 0x470
+    int32_t JumpMaxCount;      // 0x0470
+};
+
+// Kamera Görüş Açısını Tutan Sınıf
+class APlayerCameraManager : public UObject {
+public:
+    char pad_02A8[0x280];      // 0x28 - 0x2A8 (AActor boyutu 0x290 olduğundan offset 0x2A8'dir)
+    float DefaultFOV;          // 0x02A8
+};
+
+// Oyuncu Kontrolcüsü Sınıfı
+class APlayerController : public UObject {
+public:
+    char pad_02E0[0x2B8];      // 0x28 - 0x2E0
+    ACharacter* Character;     // 0x02E0
+    
+    char pad_0348[0x60];       // 0x2E8 - 0x348
+    APlayerCameraManager* PlayerCameraManager; // 0x0348
+    
+    char pad_0544[0x1F4];      // 0x350 - 0x544
+    uint8_t bShowMouseCursor;  // 0x0544
+};
+
+class UPlayer : public UObject {
+public:
+    char pad_0030[0x08];       // 0x28 - 0x30
+    APlayerController* PlayerController; // 0x0030
+};
+
+class ULocalPlayer : public UPlayer {
+    // UPlayer sınıfını miras alır
+};
+
+class UGameInstance : public UObject {
+public:
+    char pad_0038[0x10];       // 0x28 - 0x38
+    struct {
+        ULocalPlayer** Data;
+        int32_t Count;
+        int32_t Max;
+    } LocalPlayers;            // 0x0038
+};
+
+class UWorld : public UObject {
+public:
+    char pad_01D8[0x1B0];      // 0x28 - 0x1D8
+    UGameInstance* OwningGameInstance; // 0x01D8
+};
+
+// --- HİLE VE CONFIG ALANI ---
+
+namespace Offsets
+{
+    constexpr int32 GWorld = 0x07E93198; // Basic.hpp dosyasındaki orijinal GWorld adresi
+}
 
 namespace Cheats
 {
@@ -27,7 +131,7 @@ void ModMenuLoop(HMODULE hModule)
     freopen_s(&f, "CONOUT$", "w", stdout);
 
     std::cout << "===========================================\n";
-    std::cout << "[Pro Soccer Online - C++ Mod Menu]\n";
+    std::cout << "[Pro Soccer Online - Bagimsiz C++ Mod Menu]\n";
     std::cout << "===========================================\n";
     std::cout << "[NUMPAD 1] - Hiz Hilesi (Speed Hack)     [ACIK/KAPALI]\n";
     std::cout << "[NUMPAD 2] - Super Ziplama (Super Jump)   [ACIK/KAPALI]\n";
@@ -36,20 +140,29 @@ void ModMenuLoop(HMODULE hModule)
     std::cout << "[NUMPAD 5] - Mouse Gosterici (Show Cursor)[ACIK/KAPALI]\n";
     std::cout << "[HOLD SHIFT] - Anlik Depar (Stealth Sprint)\n";
     std::cout << "-------------------------------------------\n";
+    std::cout << "[F10] - Konum Kaydet (Save Location)\n";
+    std::cout << "[F11] - Kayitli Konuma Isinlan (Teleport)\n";
+    std::cout << "-------------------------------------------\n";
     std::cout << "[END] - Kapat (Eject DLL)\n";
     std::cout << "===========================================\n";
+
+    FVector SavedLocation = { 0, 0, 0 };
 
     while (!GetAsyncKeyState(VK_END))
     {
         Sleep(50);
 
-        UWorld* World = UWorld::GetWorld();
+        uintptr_t BaseAddress = (uintptr_t)GetModuleHandle(NULL);
+        if (!BaseAddress) continue;
+
+        // GWorld adresini doğrudan bellekten çekiyoruz (SDK gereksizleştirildi)
+        UWorld* World = *(UWorld**)(BaseAddress + Offsets::GWorld);
         if (!World) continue;
 
         UGameInstance* GameInstance = World->OwningGameInstance;
-        if (!GameInstance || GameInstance->LocalPlayers.Num() == 0) continue;
+        if (!GameInstance || GameInstance->LocalPlayers.Count == 0 || !GameInstance->LocalPlayers.Data) continue;
 
-        ULocalPlayer* LocalPlayer = GameInstance->LocalPlayers[0];
+        ULocalPlayer* LocalPlayer = GameInstance->LocalPlayers.Data[0];
         if (!LocalPlayer) continue;
 
         APlayerController* PlayerController = LocalPlayer->PlayerController;
@@ -61,6 +174,7 @@ void ModMenuLoop(HMODULE hModule)
         UCharacterMovementComponent* Movement = Character->CharacterMovement;
         APlayerCameraManager* CameraManager = PlayerController->PlayerCameraManager;
 
+        // Orijinal değerleri ilk çalıştırmada dinamik olarak belleğe kaydediyoruz
         if (Movement && !Cheats::bDefaultsCaptured)
         {
             Cheats::OriginalSpeed = Movement->MaxWalkSpeed;
@@ -73,6 +187,8 @@ void ModMenuLoop(HMODULE hModule)
             Cheats::bDefaultsCaptured = true;
             std::cout << "[Sistem] Orijinal oyun degerleri kaydedildi.\n";
         }
+
+        // --- TUŞ TETİKLEMELERİ ---
 
         if (GetAsyncKeyState(VK_NUMPAD1) & 1)
         {
@@ -104,6 +220,28 @@ void ModMenuLoop(HMODULE hModule)
             PlayerController->bShowMouseCursor = Cheats::bShowCursor;
             std::cout << "[Mouse Imleci] " << (Cheats::bShowCursor ? "GOSTERILIYOR" : "GIZLENDI") << "\n";
         }
+
+        // F10 - Konum Kaydet
+        if (GetAsyncKeyState(VK_F10) & 1)
+        {
+            if (Character->RootComponent)
+            {
+                SavedLocation = Character->RootComponent->RelativeLocation;
+                std::cout << "[Teleport] Konum Kaydedildi: " << SavedLocation.X << ", " << SavedLocation.Y << ", " << SavedLocation.Z << "\n";
+            }
+        }
+
+        // F11 - Kayıtlı Konuma Işınlan
+        if (GetAsyncKeyState(VK_F11) & 1)
+        {
+            if (Character->RootComponent && SavedLocation.X != 0)
+            {
+                Character->RootComponent->RelativeLocation = SavedLocation;
+                std::cout << "[Teleport] Kayitli konuma isinlandiniz.\n";
+            }
+        }
+
+        // --- HİLELERİN UYGULANMASI ---
 
         if (Movement)
         {
@@ -155,26 +293,34 @@ void ModMenuLoop(HMODULE hModule)
         }
     }
 
+    // --- KAPANIŞTA DEĞERLERİ GERİ YÜKLEME ---
     std::cout << "[Mod] Degerler orijinal haline getiriliyor...\n";
-    UWorld* World = UWorld::GetWorld();
-    if (World && World->OwningGameInstance && World->OwningGameInstance->LocalPlayers.Num() > 0)
+    uintptr_t BaseAddress = (uintptr_t)GetModuleHandle(NULL);
+    if (BaseAddress)
     {
-        ULocalPlayer* LocalPlayer = World->OwningGameInstance->LocalPlayers[0];
-        if (LocalPlayer && LocalPlayer->PlayerController)
+        UWorld* World = *(UWorld**)(BaseAddress + Offsets::GWorld);
+        if (World && World->OwningGameInstance && World->OwningGameInstance->LocalPlayers.Count > 0)
         {
-            APlayerController* PlayerController = LocalPlayer->PlayerController;
-            PlayerController->bShowMouseCursor = false;
+            ULocalPlayer* LocalPlayer = World->OwningGameInstance->LocalPlayers.Data[0];
+            if (LocalPlayer && LocalPlayer->PlayerController)
+            {
+                APlayerController* PlayerController = LocalPlayer->PlayerController;
+                PlayerController->bShowMouseCursor = false;
 
-            if (PlayerController->Character && PlayerController->Character->CharacterMovement)
-            {
-                PlayerController->Character->CharacterMovement->MaxWalkSpeed = Cheats::OriginalSpeed;
-                PlayerController->Character->CharacterMovement->JumpZVelocity = Cheats::OriginalJumpVelocity;
-                PlayerController->Character->CharacterMovement->GravityScale = Cheats::OriginalGravity;
-                PlayerController->Character->JumpMaxCount = 1;
-            }
-            if (PlayerController->PlayerCameraManager)
-            {
-                PlayerController->PlayerCameraManager->DefaultFOV = Cheats::OriginalFOV;
+                if (PlayerController->Character)
+                {
+                    if (PlayerController->Character->CharacterMovement)
+                    {
+                        PlayerController->Character->CharacterMovement->MaxWalkSpeed = Cheats::OriginalSpeed;
+                        PlayerController->Character->CharacterMovement->JumpZVelocity = Cheats::OriginalJumpVelocity;
+                        PlayerController->Character->CharacterMovement->GravityScale = Cheats::OriginalGravity;
+                    }
+                    PlayerController->Character->JumpMaxCount = 1;
+                }
+                if (PlayerController->PlayerCameraManager)
+                {
+                    PlayerController->PlayerCameraManager->DefaultFOV = Cheats::OriginalFOV;
+                }
             }
         }
     }
