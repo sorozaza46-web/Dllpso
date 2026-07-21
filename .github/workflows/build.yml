@@ -1,0 +1,41 @@
+name: Build C++ DLL
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Bu seçenek hileyi GitHub paneli üzerinden manuel tetikleyerek derlemenizi sağlar
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    # 1. Deponuzdaki dosyaları derleme sunucusuna çekiyoruz
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    # 2. Visual Studio MSBuild aracını sunucuya kuruyoruz
+    - name: Set up MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    # 3. NuGet paketlerini (varsa) geri yüklüyoruz (genelde temiz derleme için iyi bir pratiktir)
+    - name: Restore NuGet Packages
+      run: nuget restore
+
+    # 4. Projeyi Release - x64 modunda derliyoruz
+    # NOT: "YourSolution.sln" kısmını kendi Visual Studio .sln veya .vcxproj dosyanızın adıyla değiştirin.
+    - name: Build C++ Project
+      run: msbuild YourSolution.sln /p:Configuration=Release /p:Platform=x64
+
+    # 5. Derlenen .dll dosyasını indirilebilir artifact (paket) olarak yüklüyoruz
+    - name: Upload DLL Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Compiled-Cheat-DLL
+        # Visual Studio varsayılan çıktı klasöründeki .dll dosyasını hedefler
+        # Klasör yapınıza göre burayı değiştirebilirsiniz (Örn: bin/x64/Release/*.dll)
+        path: |
+          x64/Release/*.dll
+          Release/*.dll
