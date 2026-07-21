@@ -1,4 +1,4 @@
-name: Build DLL
+name: Build Independent DLL
 
 on:
   push:
@@ -10,25 +10,20 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # 1. Kodları çekiyoruz
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # 2. Visual Studio MSVC geliştirici ortamını ve derleyicisini tam olarak aktif ediyoruz
     - name: Set up MSVC Developer Command Prompt
       uses: TheMrMilchmann/setup-msvc-dev@v4
       with:
         arch: x64
 
-    # 3. CMake yapılandırmasını oluşturuyoruz (Otomatik algılama ile)
     - name: Configure CMake
       run: cmake -B build
 
-    # 4. Projeyi Release modunda derliyoruz
     - name: Build Project
       run: cmake --build build --config Release
 
-    # 5. Başarıyla üretilen DLL dosyasını çıktı olarak yüklüyoruz
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
